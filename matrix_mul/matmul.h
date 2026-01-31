@@ -1,0 +1,12 @@
+#pragma once
+#include <cuda_runtime.h>
+
+// Matrix structure
+typedef struct {
+    int width;
+    int height;
+    float* elements;
+} Matrix;
+
+// Forward declaration of the GPU matrix multiplication
+void MatMul(const Matrix A, const Matrix B, Matrix C);
