@@ -49,9 +49,9 @@ float benchmarkNaive(int M, int N, int K,
     printf("\n--- Naive GEMM ---\n");
     
     // Create Matrix structs
-    Matrix A = {K, M, const_cast<float*>(h_A)};
-    Matrix B = {N, K, const_cast<float*>(h_B)};
-    Matrix C = {N, M, h_C};
+    Matrix A = {K, M, K, const_cast<float*>(h_A)};
+    Matrix B = {N, K, N, const_cast<float*>(h_B)};
+    Matrix C = {N, M, N, h_C};
     
     // Warm-up run
     naiveGEMM(A, B, C);
@@ -81,6 +81,46 @@ float benchmarkNaive(int M, int N, int K,
     
     return tflops;
 }
+
+// benchmark MatMul -- tiled version
+float benchmarkMatMul(int M, int N, int K,
+                      const float* h_A, const float* h_B, float* h_C) {
+    printf("\n--- Tiled MatMul ---\n");
+    
+    // Create Matrix structs
+    Matrix A = {K, M, K, const_cast<float*>(h_A)};
+    Matrix B = {N, K, N, const_cast<float*>(h_B)};
+    Matrix C = {N, M, N, h_C};
+    
+    // Warm-up run
+    MatMul(A, B, C);
+    cudaDeviceSynchronize();
+    
+    // Timed run using CUDA events
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    
+    cudaEventRecord(start);
+    MatMul(A, B, C);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    
+    // Calculate performance
+    float tflops = calculateTFLOPS(M, N, K, milliseconds);
+    printf("  Time: %.3f ms\n", milliseconds);
+    printf("  Performance: %.3f TFLOPS\n", tflops);
+    
+    // Cleanup
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    
+    return tflops;
+}
+
 
 // Benchmark cuBLAS
 float benchmarkCublas(int M, int N, int K,
@@ -160,7 +200,7 @@ float benchmarkCublas(int M, int N, int K,
 
 int main() {
     printf("========================================\n");
-    printf("GEMM Benchmark: Naive vs cuBLAS\n");
+    printf("GEMM Benchmark: Naive vs Tiled vs cuBLAS\n");
     printf("========================================\n");
     
     // Print GPU info
@@ -187,6 +227,7 @@ int main() {
         float* h_A = new float[M * K];
         float* h_B = new float[K * N];
         float* h_C_naive = new float[M * N];
+        float* h_C_tiled = new float[M * N];
         float* h_C_cublas = new float[M * N];
         
         // Initialize with random data
@@ -196,31 +237,46 @@ int main() {
         // Benchmark naive
         float tflops_naive = benchmarkNaive(M, N, K, h_A, h_B, h_C_naive);
         
+        // Benchmark tiled MatMul
+        float tflops_tiled = benchmarkMatMul(M, N, K, h_A, h_B, h_C_tiled);
+        
         // Benchmark cuBLAS
         float tflops_cublas = benchmarkCublas(M, N, K, h_A, h_B, h_C_cublas);
         
         // Verify correctness
         printf("\n--- Verification ---\n");
-        bool correct = verifyResults(h_C_naive, h_C_cublas, M * N);
-        if (correct) {
-            printf("  ✓ Results match!\n");
+        bool correct_naive = verifyResults(h_C_naive, h_C_cublas, M * N);
+        bool correct_tiled = verifyResults(h_C_tiled, h_C_cublas, M * N);
+        if (correct_naive && correct_tiled) {
+            printf("  ✓ Results match for both naive and tiled implementations!\n");
         } else {
-            printf("  ✗ Results DO NOT match!\n");
+            if (!correct_naive) {
+                printf("  ✗ Naive results DO NOT match cuBLAS!\n");
+            }
+            if (!correct_tiled) {
+                printf("  ✗ Tiled results DO NOT match cuBLAS!\n");
+            }
         }
         
         // Performance comparison
-        if (tflops_naive > 0 && tflops_cublas > 0) {
-            float speedup = tflops_cublas / tflops_naive;
+        if (tflops_naive > 0 && tflops_tiled > 0 && tflops_cublas > 0) {
             printf("\n--- Performance Summary ---\n");
-            printf("  cuBLAS is %.2fx faster than naive\n", speedup);
+            printf("  Naive: %.3f TFLOPS\n", tflops_naive);
+            printf("  Tiled: %.3f TFLOPS\n", tflops_tiled);
+            printf("  cuBLAS: %.3f TFLOPS\n", tflops_cublas);
+            printf("  Tiled is %.2fx faster than naive\n", tflops_tiled / tflops_naive);
+            printf("  cuBLAS is %.2fx faster than tiled\n", tflops_cublas / tflops_tiled);
             printf("  Naive is %.1f%% of cuBLAS performance\n", 
                    (tflops_naive / tflops_cublas) * 100.0f);
+            printf("  Tiled is %.1f%% of cuBLAS performance\n", 
+                   (tflops_tiled / tflops_cublas) * 100.0f);
         }
         
         // Cleanup
         delete[] h_A;
         delete[] h_B;
         delete[] h_C_naive;
+        delete[] h_C_tiled;
         delete[] h_C_cublas;
     }
     
