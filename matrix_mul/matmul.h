@@ -9,4 +9,4 @@ typedef struct {
 } Matrix;
 
 // Forward declaration of the GPU matrix multiplication
-void MatMul(const Matrix A, const Matrix B, Matrix C);
+void naiveGEMM(const Matrix A, const Matrix B, Matrix C);

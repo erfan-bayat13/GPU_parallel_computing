@@ -5,7 +5,7 @@
 #define BLOCK_SIZE 16
 
 // CUDA kernel
-__global__ void MatMulKernel(Matrix A, Matrix B, Matrix C)
+__global__ void naiveGEMMKernel(Matrix A, Matrix B, Matrix C)
 {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -20,7 +20,7 @@ __global__ void MatMulKernel(Matrix A, Matrix B, Matrix C)
 }
 
 // Host function that wraps kernel call
-void MatMul(const Matrix A, const Matrix B, Matrix C)
+void naiveGEMM(const Matrix A, const Matrix B, Matrix C)
 {
     Matrix d_A, d_B, d_C;
     d_A.width = A.width; d_A.height = A.height;
@@ -42,7 +42,13 @@ void MatMul(const Matrix A, const Matrix B, Matrix C)
     dim3 dimGrid((B.width + BLOCK_SIZE - 1) / BLOCK_SIZE,
                  (A.height + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
-    MatMulKernel<<<dimGrid, dimBlock>>>(d_A, d_B, d_C);
+    naiveGEMMKernel<<<dimGrid, dimBlock>>>(d_A, d_B, d_C);
+
+    // error checking (important!)
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "Kernel launch error: " << cudaGetErrorString(err) << std::endl;
+    }
 
     cudaMemcpy(C.elements, d_C.elements, sizeC, cudaMemcpyDeviceToHost);
 
